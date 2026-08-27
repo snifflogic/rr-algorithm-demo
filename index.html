@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>RR algorithm demo</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1c1917;
+      --muted: #57534e;
+      --line: #d6d3d1;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      padding: 1.25rem 1.5rem 0.5rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.35rem; font-weight: 650; margin: 0 0 0.35rem; }
+    .sub { color: var(--muted); font-size: 0.95rem; max-width: 46rem; }
+    main { max-width: 1100px; margin: 0 auto; padding: 0.75rem 1.5rem 2rem; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1rem 1.1rem 1.15rem;
+      margin-top: 0.9rem;
+    }
+    .panel h2 { font-size: 1.02rem; margin: 0 0 0.35rem; }
+    .panel p { margin: 0 0 0.8rem; color: var(--muted); font-size: 0.92rem; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.85rem 1.25rem;
+      align-items: end;
+      margin-bottom: 0.85rem;
+    }
+    label { display: grid; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+    label.disabled { opacity: 0.4; pointer-events: none; }
+    input[type="range"] { width: 160px; }
+    input[type="file"] { max-width: 220px; font-size: 0.78rem; }
+    .value { color: var(--ink); font-variant-numeric: tabular-nums; }
+    .hint { margin: -0.35rem 0 0.75rem; color: var(--muted); font-size: 0.8rem; }
+    .hint.err { color: #b91c1c; }
+    .file-row button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.35rem 0.7rem;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .rr-box {
+      display: flex;
+      align-items: baseline;
+      gap: 0.55rem;
+      margin: 0 0 0.75rem;
+      padding: 0.55rem 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      width: fit-content;
+    }
+    .rr-num { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    .rr-num.na { color: #a8a29e; font-size: 1.6rem; }
+    .rr-unit { color: var(--muted); font-size: 0.9rem; }
+    canvas {
+      width: 100%;
+      height: 340px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .legend {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 0.65rem;
+      font-size: 0.85rem;
+    }
+    .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; }
+    .steps { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .steps button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 0.35rem 0.8rem;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    .steps button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .steps button:disabled { opacity: 0.45; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Respiratory rate algorithm</h1>
+    <p class="sub" id="blurb"></p>
+  </header>
+  <main>
+    <div class="steps" id="steps"></div>
+    <section class="panel">
+      <h2 id="title"></h2>
+      <p id="desc"></p>
+      <div class="rr-box" id="rrBox">
+        <div class="rr-num" id="rrNum">--</div>
+        <div class="rr-unit" id="rrUnit">avg breaths / min</div>
+      </div>
+      <div class="controls">
+        <label>
+          Sampling rate <span class="value" id="fsVal">6 Hz</span>
+          <input id="fs" type="range" min="4" max="25" step="1" value="6"/>
+        </label>
+        <label data-synth>
+          Respiratory rate <span class="value" id="rrVal">15 bpm</span>
+          <input id="rr" type="range" min="6" max="30" step="1" value="15"/>
+        </label>
+        <label data-synth>
+          Duration <span class="value" id="durVal">40 s</span>
+          <input id="dur" type="range" min="15" max="90" step="5" value="40"/>
+        </label>
+        <label data-synth>
+          Breath size <span class="value" id="ampVal">100%</span>
+          <input id="amp" type="range" min="0" max="100" step="1" value="100"/>
+        </label>
+        <label>
+          Noise <span class="value" id="noiseVal">0.00 Pa</span>
+          <input id="noise" type="range" min="0" max="40" step="1" value="0"/>
+        </label>
+      </div>
+      <div class="controls file-row">
+        <label>
+          CSV <span class="value" id="csvName">demo signal</span>
+          <input id="csv" type="file" accept=".csv,text/csv,text/plain"/>
+        </label>
+        <button type="button" id="csvClear" hidden>Use demo signal</button>
+      </div>
+      <p class="hint" id="csvHint">CSV in Pa: two columns <code>left,right</code> (headers <code>p_L</code>/<code>p_R</code> also work). Sampling rate is set with the slider, not the file. Noise is added in Pa on top of the CSV.</p>
+      <canvas id="plot" width="1000" height="340"></canvas>
+      <div class="legend" id="legend"></div>
+    </section>
+  </main>
+  <script>
+    const F_L = 4 / 60;
+    const F_H = 1;
+    const Q = 1 / Math.sqrt(2);
+    const A_MIN = 7;
+    const KAPPA = 0.2;
+    const KAPPA_LOBE = 0.3;
+    const KAPPA_NOTCH = 0.3;
+    const KAPPA_RISE = 0.3;
+    const T_REF = 60 / 60;
+    const T_MAX = 60 / 4;
+    const W_AMP = 30;
+    const W_RR = 30;
+    const AMP_L = 55;
+    const AMP_R = 41;
+    const Y_FULL = (AMP_L + AMP_R) * 1.25;
+    const NOISE_STEP = 0.35;
+
+    const STEPS = [
+      {
+        id: 1,
+        name: "1. Input",
+        title: "Step 1 — Input",
+        blurb: "Two nasal differential pressures in Pa, and their sum.",
+        desc: "Left and right traces are summed. The synthetic breath is an adult nasal-pressure cycle (shorter inspiration, longer lower expiration), not a sine. Noise is additive Gaussian in Pa on each channel and does not scale with Breath size; it also applies to an uploaded CSV. Upload a CSV to replace the demo signal.",
+      },
+      {
+        id: 2,
+        name: "2. Filter",
+        title: "Step 2 — Respiratory band",
+        blurb: "Causal Butterworth high-pass then low-pass, keeping the adult breathing band.",
+        desc: "High-pass at 4 bpm, low-pass at 60 bpm. Later stages use the green trace y.",
+      },
+      {
+        id: 3,
+        name: "3. Breaths",
+        title: "Step 3 — Breath detection",
+        blurb: "Peaks in a positive lobe of y count if they are tall enough versus the lobe max and the dip before them is a real trough or a deep notch. A small recovery after a deep expiration is not a breath. Quiet breaths are gated against the median of recent amplitudes, not the third quartile.",
+        desc: "Green marks are accepted breaths. Red marks failed lobe height, rise/notch, amplitude, or refractory. Opposite-sign pairing also requires the peak to be at least 30% of the trough depth, so filter rebound after a huge expiration is not counted. Two substantial peaks in one lobe can both count if the notch is deep; a tiny precursor cannot. A larger peak inside the 1.0 s refractory (60 bpm ceiling) replaces the earlier one. Below A_min = 7 Pa (~4% of this demo’s full breath) there is no rate. The pressure axis is fixed at 100% breath size.",
+      },
+      {
+        id: 4,
+        name: "4. Rate",
+        title: "Step 4 — Respiratory rate",
+        blurb: "RR is the nearest integer to 60 over the median of valid inter-breath intervals in the last 30 s.",
+        desc: "The box is the average RR over the whole recording: 60 over the mean of every valid inter-breath interval (1.0–15 s), as an integer. It is undefined until two such intervals exist. The lower strip is the rolling rate (median of intervals ending in the last 30 s); it clears if the last breath is older than 15 s. The pressure axis stays at 100% size; drop Breath size below ~4% (A_min) to see no-rate.",
+      },
+    ];
+
+    let step = 1;
+    const canvas = document.getElementById("plot");
+    const ctx = canvas.getContext("2d");
+    const fsEl = document.getElementById("fs");
+    const rrEl = document.getElementById("rr");
+    const durEl = document.getElementById("dur");
+    const ampEl = document.getElementById("amp");
+    const noiseEl = document.getElementById("noise");
+    const csvEl = document.getElementById("csv");
+    const csvClearEl = document.getElementById("csvClear");
+    const csvNameEl = document.getElementById("csvName");
+    const csvHintEl = document.getElementById("csvHint");
+    const csvHintDefault = csvHintEl.textContent;
+    let uploaded = null;
+
+    function mulberry32(a) {
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        let t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function gauss(rand) {
+      const u = Math.max(rand(), 1e-12);
+      const v = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    function noiseSigma() {
+      return Number(noiseEl.value) * NOISE_STEP;
+    }
+
+    // Adult nasal-pressure cycle on [0, 1): I:E ≈ 1:1.7, volume-balanced
+    // peaks, short end-expiratory pause. Normalized to ±1.
+    function breathShapeRaw(u) {
+      const pause = 0.10;
+      const Ti = 0.34;
+      const Te = 1 - pause - Ti;
+      const expPeak = Ti / Te;
+      if (u < Ti) {
+        const x = u / Ti;
+        return -Math.pow(Math.sin(Math.PI * x), 1.12);
+      }
+      if (u < Ti + Te) {
+        const x = (u - Ti) / Te;
+        return expPeak * Math.pow(Math.sin(Math.PI * x), 1.4) * (1 - 0.18 * x);
+      }
+      return 0;
+    }
+
+    const BREATH_NORM = (() => {
+      let m = 0;
+      for (let i = 0; i < 800; i++) m = Math.max(m, Math.abs(breathShapeRaw(i / 800)));
+      return m || 1;
+    })();
+
+    function breathWave(t, bpm, amp, phase) {
+      const period = 60 / bpm;
+      let u = t / period + phase / (2 * Math.PI);
+      u -= Math.floor(u);
+      if (u < 0) u += 1;
+      return amp * breathShapeRaw(u) / BREATH_NORM;
+    }
+
+    function biquadCoeffs(fs, f, type) {
+      const w = 2 * Math.PI * f / fs;
+      const cosw = Math.cos(w);
+      const sinw = Math.sin(w);
+      const alpha = sinw / (2 * Q);
+      const a0 = 1 + alpha;
+      const a1 = -2 * cosw;
+      const a2 = 1 - alpha;
+      let b0, b1, b2;
+      if (type === "hp") {
+        b0 = (1 + cosw) / 2;
+        b1 = -(1 + cosw);
+        b2 = (1 + cosw) / 2;
+      } else {
+        b0 = (1 - cosw) / 2;
+        b1 = 1 - cosw;
+        b2 = (1 - cosw) / 2;
+      }
+      return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+    }
+
+    function applyBiquad(u, c) {
+      const y = new Array(u.length);
+      let z1 = 0, z2 = 0;
+      for (let n = 0; n < u.length; n++) {
+        const yn = c.b0 * u[n] + z1;
+        z1 = c.b1 * u[n] - c.a1 * yn + z2;
+        z2 = c.b2 * u[n] - c.a2 * yn;
+        y[n] = yn;
+      }
+      return y;
+    }
+
+    function bandpass(x, fs) {
+      const hp = applyBiquad(x, biquadCoeffs(fs, F_L, "hp"));
+      return applyBiquad(hp, biquadCoeffs(fs, F_H, "lp"));
+    }
+
+    function splitCsvLine(line, delim) {
+      const out = [];
+      let cur = "";
+      let quoted = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') { quoted = !quoted; continue; }
+        if (!quoted && c === delim) { out.push(cur.trim()); cur = ""; continue; }
+        cur += c;
+      }
+      out.push(cur.trim());
+      return out;
+    }
+
+    function detectDelim(line) {
+      const counts = [
+        { d: ",", n: (line.match(/,/g) || []).length },
+        { d: ";", n: (line.match(/;/g) || []).length },
+        { d: "\t", n: (line.match(/\t/g) || []).length },
+      ];
+      counts.sort((a, b) => b.n - a.n);
+      return counts[0].n ? counts[0].d : ",";
+    }
+
+    function parseNum(s, commaDecimal) {
+      let x = String(s).trim();
+      if (!x) return null;
+      if (commaDecimal) x = x.replace(",", ".");
+      const v = Number(x);
+      return Number.isFinite(v) ? v : null;
+    }
+
+    function headerIndex(headers, names) {
+      const h = headers.map((s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ""));
+      for (const name of names) {
+        const key = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const i = h.indexOf(key);
+        if (i >= 0) return i;
+      }
+      return -1;
+    }
+
+    function parseCsv(text) {
+      const raw = text.replace(/^\uFEFF/, "").replace(/\r/g, "\n").split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#"));
+      if (raw.length < 2) throw new Error("CSV needs a header or at least two samples.");
+      const delim = detectDelim(raw[0]);
+      const commaDecimal = delim === ";";
+      const first = splitCsvLine(raw[0], delim);
+      const looksHeader = first.some((c) => /[a-zA-Z_]/.test(c) && parseNum(c, commaDecimal) == null);
+      const headers = looksHeader ? first : first.map((_, i) => "c" + i);
+      let rows = (looksHeader ? raw.slice(1) : raw).map((l) => splitCsvLine(l, delim));
+      rows = rows.filter((r) => r.some((c) => c !== ""));
+
+      let iL = headerIndex(headers, ["left", "pl", "p_l", "pleft", "leftpsi", "naris_l", "nostril_l", "nostrilleft"]);
+      let iR = headerIndex(headers, ["right", "pr", "p_r", "pright", "rightpsi", "naris_r", "nostril_r", "nostrilright"]);
+      if (iL < 0 || iR < 0) {
+        if (first.length === 2) { iL = 0; iR = 1; }
+      }
+      if (iL < 0 || iR < 0) throw new Error("CSV must have left and right columns only (Pa).");
+
+      const left = [];
+      const right = [];
+      for (const r of rows) {
+        const l = parseNum(r[iL], commaDecimal);
+        const rv = parseNum(r[iR], commaDecimal);
+        if (l == null || rv == null) continue;
+        left.push(l);
+        right.push(rv);
+      }
+      if (left.length < 8) throw new Error("Not enough valid samples.");
+      return { left, right };
+    }
+
+    function generateSynth() {
+      const fs = Number(fsEl.value);
+      const bpm = Number(rrEl.value);
+      const duration = Number(durEl.value);
+      const n = Math.floor(duration * fs);
+      const rand = mulberry32(1);
+      const sigma = noiseSigma();
+      const t = [];
+      const left = [];
+      const right = [];
+      const x = [];
+      for (let i = 0; i < n; i++) {
+        const ti = i / fs;
+        const drift = 2.8 * Math.sin(2 * Math.PI * ti / 45);
+        const scale = Number(ampEl.value) / 100;
+        const pL = scale * breathWave(ti, bpm, AMP_L, 0) + drift * 0.55 + gauss(rand) * sigma;
+        const pR = scale * breathWave(ti, bpm, AMP_R, 0.12) + drift * 0.45 + gauss(rand) * sigma;
+        t.push(ti);
+        left.push(pL);
+        right.push(pR);
+        x.push(pL + pR);
+      }
+      return { fs, duration, t, left, right, x };
+    }
+
+    function generateFromCsv() {
+      const fs = Number(fsEl.value);
+      const rand = mulberry32(1);
+      const sigma = noiseSigma();
+      const left = [];
+      const right = [];
+      const x = [];
+      const t = [];
+      for (let i = 0; i < uploaded.left.length; i++) {
+        const pL = uploaded.left[i] + gauss(rand) * sigma;
+        const pR = uploaded.right[i] + gauss(rand) * sigma;
+        t.push(i / fs);
+        left.push(pL);
+        right.push(pR);
+        x.push(pL + pR);
+      }
+      const duration = t.length > 1 ? t[t.length - 1] : 0;
+      return { fs, duration, t, left, right, x };
+    }
+
+    function generate() {
+      const raw = uploaded ? generateFromCsv() : generateSynth();
+      const y = bandpass(raw.x, raw.fs);
+      const breaths = detectBreaths(raw.t, y);
+      const times = breaths.accepted.map((p) => p.t);
+      const rr = raw.t.map((ti) => rateAt(ti, times));
+      const rrAvg = recordingAverageRR(times);
+      return { ...raw, y, breaths, rr, rrAvg };
+    }
+
+    function quantile(values, q) {
+      if (!values.length) return 0;
+      const a = values.slice().sort((u, v) => u - v);
+      const pos = (a.length - 1) * q;
+      const lo = Math.floor(pos);
+      const hi = Math.ceil(pos);
+      if (lo === hi) return a[lo];
+      return a[lo] * (hi - pos) + a[hi] * (pos - lo);
+    }
+
+    function interpExtremum(t, y, i) {
+      const dt = t[i] - t[i - 1];
+      const den = y[i - 1] - 2 * y[i] + y[i + 1];
+      let frac = den === 0 ? 0 : 0.5 * (y[i - 1] - y[i + 1]) / den;
+      frac = Math.max(-1, Math.min(1, frac));
+      return { t: t[i] + frac * dt, y: y[i] - 0.25 * (y[i - 1] - y[i + 1]) * frac };
+    }
+
+    function detectBreaths(t, y) {
+      const rejected = [];
+      const accepted = [];
+      const troughs = [];
+      const lobePeaks = [];
+      let lobe = null;
+
+      function closeLobe() {
+        if (!lobe) return;
+        if (lobe.peaks.length) lobePeaks.push(lobe.peaks);
+        lobe = null;
+      }
+
+      for (let n = 1; n < y.length - 1; n++) {
+        if (y[n - 1] <= 0 && y[n] > 0) {
+          closeLobe();
+          lobe = { peaks: [] };
+        } else if (y[n - 1] >= 0 && y[n] < 0) {
+          closeLobe();
+        }
+        if (y[n] > y[n - 1] && y[n] >= y[n + 1]) {
+          const p = { i: n, ...interpExtremum(t, y, n) };
+          if (lobe) lobe.peaks.push(p);
+          else rejected.push(p);
+        }
+        if (y[n] < y[n - 1] && y[n] <= y[n + 1]) {
+          troughs.push({ i: n, ...interpExtremum(t, y, n) });
+        }
+      }
+      if (lobe) {
+        for (const p of lobe.peaks) rejected.push(p);
+      }
+
+      const candidates = [];
+      let ti = 0;
+      function troughBefore(tp) {
+        while (ti < troughs.length && troughs[ti].t < tp) ti += 1;
+        return ti > 0 ? troughs[ti - 1] : null;
+      }
+      for (const peaks of lobePeaks) {
+        const yBest = Math.max.apply(null, peaks.map((p) => p.y));
+        ti = 0;
+        for (const peak of peaks) {
+          const trough = troughBefore(peak.t);
+          if (peak.y < KAPPA_LOBE * yBest) {
+            rejected.push(peak);
+            continue;
+          }
+          if (!trough || trough.t >= peak.t) {
+            rejected.push(peak);
+            continue;
+          }
+          const A = peak.y - trough.y;
+          const opposite = peak.y * trough.y < 0;
+          const rise = opposite && peak.y >= KAPPA_RISE * Math.abs(trough.y);
+          const notch = !opposite && peak.y > 0 && A >= KAPPA_NOTCH * peak.y;
+          if (A < A_MIN || (!rise && !notch)) {
+            rejected.push({ ...peak, A, trough });
+            continue;
+          }
+          candidates.push({ peak, trough, A });
+        }
+      }
+
+      const amps = [];
+      let lastAcc = -Infinity;
+      for (const { peak, trough, A } of candidates) {
+        amps.push({ t: peak.t, A });
+        while (amps.length && peak.t - amps[0].t > W_AMP) amps.shift();
+        const recent = amps.map((a) => a.A);
+        const med = recent.length >= 4 ? quantile(recent, 0.5) : 0;
+        const thr = Math.max(A_MIN, recent.length >= 4 ? KAPPA * med : A_MIN);
+        if (A < thr) {
+          rejected.push({ ...peak, A, trough, thr });
+          continue;
+        }
+        if (peak.t - lastAcc >= T_REF) {
+          accepted.push({ ...peak, A, trough, thr });
+          lastAcc = peak.t;
+        } else if (accepted.length && A > accepted[accepted.length - 1].A) {
+          rejected.push(accepted.pop());
+          accepted.push({ ...peak, A, trough, thr });
+          lastAcc = peak.t;
+        } else {
+          rejected.push({ ...peak, A, trough, thr });
+        }
+      }
+      return { accepted, rejected };
+    }
+
+    function rateAt(tNow, times) {
+      const breaths = times.filter((t) => t <= tNow);
+      if (!breaths.length || tNow - breaths[breaths.length - 1] > T_MAX) return null;
+      const ibis = [];
+      for (let i = 1; i < breaths.length; i++) {
+        const d = breaths[i] - breaths[i - 1];
+        if (d >= T_REF && d <= T_MAX && breaths[i] > tNow - W_RR) ibis.push(d);
+      }
+      if (ibis.length < 2) return null;
+      return Math.round(60 / quantile(ibis, 0.5));
+    }
+
+    function recordingAverageRR(times) {
+      const ibis = [];
+      for (let i = 1; i < times.length; i++) {
+        const d = times[i] - times[i - 1];
+        if (d >= T_REF && d <= T_MAX) ibis.push(d);
+      }
+      if (ibis.length < 2) return null;
+      let sum = 0;
+      for (let i = 0; i < ibis.length; i++) sum += ibis[i];
+      return Math.round(60 / (sum / ibis.length));
+    }
+
+    function swatch(color, label) {
+      return `<span><i class="swatch" style="background:${color}"></i>${label}</span>`;
+    }
+
+    function timeTickStep(span) {
+      const targets = [1, 2, 5, 10, 15, 20, 30, 60];
+      const ideal = span / 12;
+      for (let i = 0; i < targets.length; i++) {
+        if (targets[i] >= ideal) return targets[i];
+      }
+      return 60;
+    }
+
+    function formatTimeTick(s) {
+      const r = Math.round(s);
+      return Math.abs(s - r) < 1e-6 ? String(r) : s.toFixed(1);
+    }
+
+    function draw() {
+      const data = generate();
+      const w = canvas.width;
+      const h = canvas.height;
+      const pad = { l: 58, r: 16, t: 16, b: 36 };
+      const plotW = w - pad.l - pad.r;
+      const split = step === 4;
+      const rrBand = split ? 96 : 0;
+      const gap = split ? 36 : 0;
+      const plotH = h - pad.t - pad.b - rrBand - gap;
+      const rrTop = pad.t + plotH + gap;
+
+      const series = step === 1
+        ? [
+            { values: data.left, color: "#b45309", width: 1.4 },
+            { values: data.right, color: "#0369a1", width: 1.4 },
+            { values: data.x, color: "#166534", width: 2.2 },
+          ]
+        : step === 2
+        ? [
+            { values: data.x, color: "#a8a29e", width: 1.2 },
+            { values: data.y, color: "#166534", width: 2.2 },
+          ]
+        : [
+            { values: data.y, color: "#166534", width: 2.0 },
+          ];
+
+      const padY = uploaded
+        ? null
+        : Math.max(Y_FULL, 3.2 * noiseSigma());
+      let ymin, ymax;
+      if (padY == null) {
+        ymin = 0;
+        ymax = 0;
+        for (const s of series) {
+          for (const v of s.values) {
+            if (v < ymin) ymin = v;
+            if (v > ymax) ymax = v;
+          }
+        }
+        const span = Math.max(ymax - ymin, 1e-4) * 1.15;
+        const mid = (ymax + ymin) / 2;
+        ymin = mid - span / 2;
+        ymax = mid + span / 2;
+      } else {
+        ymin = -padY;
+        ymax = padY;
+      }
+      const t0 = data.t[0];
+      const tSpan = Math.max(data.t[data.t.length - 1] - t0, 1e-9);
+      const tEnd = t0 + tSpan;
+      const majorDt = timeTickStep(tSpan);
+      const xOf = (t) => pad.l + ((t - t0) / tSpan) * plotW;
+      const yOf = (v) => pad.t + (1 - (v - ymin) / (ymax - ymin)) * plotH;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w, h);
+
+      const strokeTimeGrid = (top, height) => {
+        const n = data.t.length;
+        const pxPerSample = plotW / Math.max(n - 1, 1);
+        const stride = Math.max(1, Math.ceil(4 / pxPerSample));
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(pad.l, top, plotW, height);
+        ctx.clip();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(168, 162, 158, 0.35)";
+        ctx.beginPath();
+        for (let i = 0; i < n; i += stride) {
+          const x = Math.round(xOf(data.t[i])) + 0.5;
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, top + height);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(87, 83, 78, 0.28)";
+        ctx.beginPath();
+        for (let s = Math.ceil(t0); s <= tEnd + 1e-9; s += 1) {
+          const x = Math.round(xOf(s)) + 0.5;
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, top + height);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(87, 83, 78, 0.5)";
+        ctx.beginPath();
+        const major0 = Math.ceil(t0 / majorDt) * majorDt;
+        for (let s = major0; s <= tEnd + 1e-9; s += majorDt) {
+          const x = Math.round(xOf(s)) + 0.5;
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, top + height);
+        }
+        ctx.stroke();
+        ctx.restore();
+      };
+      strokeTimeGrid(pad.t, plotH);
+      if (split) strokeTimeGrid(rrTop, rrBand);
+
+      ctx.strokeStyle = "#e7e5e4";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, yOf(0));
+      ctx.lineTo(w - pad.r, yOf(0));
+      ctx.stroke();
+
+      for (const s of series) {
+        ctx.beginPath();
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        s.values.forEach((v, i) => {
+          const xp = xOf(data.t[i]);
+          const yp = yOf(v);
+          if (i === 0) ctx.moveTo(xp, yp);
+          else ctx.lineTo(xp, yp);
+        });
+        ctx.stroke();
+      }
+
+      if (step >= 3) {
+        const marks = step === 3 ? data.breaths.rejected : [];
+        for (const p of marks) {
+          ctx.beginPath();
+          ctx.arc(xOf(p.t), yOf(p.y), 4.2, 0, Math.PI * 2);
+          ctx.strokeStyle = "#b91c1c";
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
+        for (const p of data.breaths.accepted) {
+          if (step === 3 && p.trough) {
+            ctx.beginPath();
+            ctx.strokeStyle = "rgba(22, 101, 52, 0.45)";
+            ctx.lineWidth = 1;
+            ctx.moveTo(xOf(p.trough.t), yOf(p.trough.y));
+            ctx.lineTo(xOf(p.t), yOf(p.y));
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.arc(xOf(p.t), yOf(p.y), 5, 0, Math.PI * 2);
+          ctx.fillStyle = "#166534";
+          ctx.fill();
+        }
+      }
+
+      if (split) {
+        const rrMin = 0, rrMax = 60;
+        const rrY = (v) => rrTop + (1 - (v - rrMin) / (rrMax - rrMin)) * rrBand;
+        ctx.strokeStyle = "#e7e5e4";
+        ctx.beginPath();
+        ctx.moveTo(pad.l, rrY(12));
+        ctx.lineTo(w - pad.r, rrY(12));
+        ctx.moveTo(pad.l, rrY(20));
+        ctx.lineTo(w - pad.r, rrY(20));
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.strokeStyle = "#9a3412";
+        ctx.lineWidth = 2;
+        let drawing = false;
+        data.rr.forEach((v, i) => {
+          if (v == null) { drawing = false; return; }
+          const xp = xOf(data.t[i]);
+          const yp = rrY(v);
+          if (!drawing) { ctx.moveTo(xp, yp); drawing = true; }
+          else ctx.lineTo(xp, yp);
+        });
+        ctx.stroke();
+
+        const rrKey = (v) => v;
+        const segs = [];
+        let seg0 = 0;
+        for (let i = 1; i <= data.rr.length; i++) {
+          const prev = rrKey(data.rr[i - 1]);
+          const cur = i < data.rr.length ? rrKey(data.rr[i]) : Symbol("end");
+          if (cur === prev) continue;
+          segs.push({ i0: seg0, i1: i - 1, v: prev });
+          seg0 = i;
+        }
+        ctx.font = "600 11px Segoe UI, sans-serif";
+        ctx.textBaseline = "bottom";
+        const placed = [];
+        const candidates = segs
+          .filter((s) => s.v != null)
+          .map((s) => {
+            const x0 = xOf(data.t[s.i0]);
+            const x1 = xOf(data.t[s.i1]);
+            return { x: (x0 + x1) / 2, w: x1 - x0, text: String(s.v) };
+          })
+          .filter((s) => s.w >= 20)
+          .sort((a, b) => b.w - a.w);
+        for (const s of candidates) {
+          const half = ctx.measureText(s.text).width / 2 + 3;
+          const x = Math.max(pad.l + half, Math.min(w - pad.r - half, s.x));
+          if (placed.some((p) => Math.abs(p.x - x) < p.half + half)) continue;
+          placed.push({ x, half, text: s.text });
+        }
+        ctx.fillStyle = "#9a3412";
+        ctx.textAlign = "center";
+        for (const p of placed) ctx.fillText(p.text, p.x, rrTop - 4);
+
+        ctx.fillStyle = "#57534e";
+        ctx.font = "11px Segoe UI, sans-serif";
+        ctx.textBaseline = "alphabetic";
+        ctx.textAlign = "right";
+        ctx.fillText("60", pad.l - 6, rrTop + 10);
+        ctx.fillText("0", pad.l - 6, rrTop + rrBand);
+        ctx.save();
+        ctx.translate(14, rrTop + rrBand / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "center";
+        ctx.fillText("RR (bpm)", 0, 0);
+        ctx.restore();
+      }
+
+      ctx.fillStyle = "#57534e";
+      ctx.font = "12px Segoe UI, sans-serif";
+      ctx.save();
+      ctx.translate(14, pad.t + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = "center";
+      ctx.fillText("pressure (Pa)", 0, 0);
+      ctx.restore();
+      ctx.textAlign = "right";
+      ctx.fillText(ymax.toFixed(0), pad.l - 6, pad.t + 10);
+      ctx.fillText(ymin.toFixed(0), pad.l - 6, pad.t + plotH);
+
+      const timeLabels = [];
+      timeLabels.push(t0);
+      const major0 = Math.ceil((t0 + 1e-9) / majorDt) * majorDt;
+      for (let s = major0; s < tEnd - 1e-9; s += majorDt) timeLabels.push(s);
+      timeLabels.push(tEnd);
+      const placedX = [];
+      ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = "#57534e";
+      for (const s of timeLabels) {
+        const rawX = xOf(s);
+        let align = "center";
+        let x = rawX;
+        if (s === t0 || rawX < pad.l + 10) { align = "left"; x = pad.l; }
+        else if (s === tEnd || rawX > w - pad.r - 10) { align = "right"; x = w - pad.r; }
+        if (placedX.some((p) => Math.abs(p - x) < 28)) continue;
+        placedX.push(x);
+        ctx.textAlign = align;
+        const text = s === tEnd ? formatTimeTick(s) + " s" : formatTimeTick(s);
+        ctx.fillText(text, x, h - 12);
+      }
+    }
+
+    function renderMeta() {
+      const spec = STEPS.find((s) => s.id === step);
+      document.getElementById("blurb").textContent = spec.blurb;
+      document.getElementById("title").textContent = spec.title;
+      document.getElementById("desc").textContent = spec.desc;
+      const sampleGrid = swatch("rgba(168,162,158,0.85)", "samples (1/" + fsEl.value + " s)");
+      document.getElementById("legend").innerHTML = step === 1
+        ? swatch("#b45309", "p<sub>L</sub> left (Pa)") +
+          swatch("#0369a1", "p<sub>R</sub> right (Pa)") +
+          swatch("#166534", "x = p<sub>L</sub> + p<sub>R</sub> (Pa)") +
+          sampleGrid
+        : step === 2
+        ? swatch("#a8a29e", "x input (Pa)") +
+          swatch("#166534", "y band-limited (Pa)") +
+          sampleGrid
+        : step === 3
+        ? swatch("#166534", "y (Pa)") +
+          swatch("#166534", "accepted breath") +
+          swatch("#b91c1c", "rejected peak") +
+          sampleGrid
+        : swatch("#166534", "y and breaths") +
+          swatch("#9a3412", "RR (bpm)") +
+          sampleGrid;
+      document.getElementById("fsVal").textContent = fsEl.value + " Hz";
+      document.getElementById("rrVal").textContent = rrEl.value + " bpm";
+      document.getElementById("durVal").textContent = uploaded
+        ? ((uploaded.left.length - 1) / Number(fsEl.value)).toFixed(1) + " s"
+        : durEl.value + " s";
+      document.getElementById("ampVal").textContent = ampEl.value + "%";
+      document.getElementById("noiseVal").textContent = noiseSigma().toFixed(2) + " Pa";
+      csvNameEl.textContent = uploaded ? uploaded.name : "demo signal";
+      document.querySelectorAll("[data-synth]").forEach((el) => {
+        el.classList.toggle("disabled", !!uploaded);
+      });
+      fsEl.disabled = false;
+      fsEl.closest("label").classList.remove("disabled");
+      rrEl.disabled = !!uploaded;
+      durEl.disabled = !!uploaded;
+      ampEl.disabled = !!uploaded;
+      csvClearEl.hidden = !uploaded;
+      const num = document.getElementById("rrNum");
+      const unit = document.getElementById("rrUnit");
+      const data = generate();
+      if (data.rrAvg == null) {
+        num.textContent = "--";
+        num.classList.add("na");
+        unit.textContent = "no rate yet";
+      } else {
+        num.textContent = String(data.rrAvg);
+        num.classList.remove("na");
+        unit.textContent = "avg breaths / min";
+      }
+      document.querySelectorAll("#steps button[data-step]").forEach((btn) => {
+        btn.classList.toggle("active", Number(btn.dataset.step) === step);
+      });
+      draw();
+    }
+
+    function buildSteps() {
+      const host = document.getElementById("steps");
+      STEPS.forEach((s) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.step = String(s.id);
+        btn.textContent = s.name;
+        btn.addEventListener("click", () => { step = s.id; renderMeta(); });
+        host.appendChild(btn);
+      });
+    }
+
+    fsEl.addEventListener("input", renderMeta);
+    rrEl.addEventListener("input", renderMeta);
+    durEl.addEventListener("input", renderMeta);
+    ampEl.addEventListener("input", renderMeta);
+    noiseEl.addEventListener("input", renderMeta);
+    csvEl.addEventListener("change", () => {
+      const file = csvEl.files && csvEl.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = parseCsv(String(reader.result || ""));
+          uploaded = { name: file.name, ...parsed };
+          csvHintEl.textContent = parsed.left.length + " samples. Duration follows the sampling-rate slider.";
+          csvHintEl.classList.remove("err");
+          renderMeta();
+        } catch (err) {
+          uploaded = null;
+          csvHintEl.textContent = err.message || "Could not read CSV.";
+          csvHintEl.classList.add("err");
+          csvEl.value = "";
+          renderMeta();
+        }
+      };
+      reader.onerror = () => {
+        uploaded = null;
+        csvHintEl.textContent = "Could not read that file.";
+        csvHintEl.classList.add("err");
+        csvEl.value = "";
+        renderMeta();
+      };
+      reader.readAsText(file);
+    });
+    csvClearEl.addEventListener("click", () => {
+      uploaded = null;
+      csvEl.value = "";
+      csvHintEl.textContent = csvHintDefault;
+      csvHintEl.classList.remove("err");
+      renderMeta();
+    });
+    buildSteps();
+    renderMeta();
+  </script>
+</body>
+</html>
